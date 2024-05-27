@@ -74,9 +74,37 @@ public class DivByZeroTransfer extends CFTransfer {
    * @param rhs the lattice point for the right-hand side of the comparison expression
    * @return a refined type for lhs
    */
-  private AnnotationMirror refineLhsOfComparison(
-      Comparison operator, AnnotationMirror lhs, AnnotationMirror rhs) {
-    // TODO
+  private AnnotationMirror refineLhsOfComparison(Comparison operator, AnnotationMirror lhs, AnnotationMirror rhs) {
+    AnnotationMirror zero = reflect(Zero.class);
+    AnnotationMirror nonZero = reflect(NonZero.class);
+    switch (operator) {
+      case EQ :
+        if (equal(lhs, rhs)) {
+          return lhs;
+        } else if (equal(rhs, zero)) {
+          return zero;
+        } else if (equal(rhs, nonZero)) {
+          return nonZero;
+        } else if (equal(rhs, top())) {
+          return top();
+        } else {
+          return bottom();
+        }
+      case NE:
+        if(equal(rhs, zero))
+          return nonZero;
+        else if(equal(rhs, nonZero))
+          return zero;
+        break;
+      case LE:
+      case GE:
+        break;
+      case GT:
+      case LT:
+        if(equal(rhs, zero))
+          return nonZero;
+        break;
+    }
     return lhs;
   }
 
@@ -96,8 +124,55 @@ public class DivByZeroTransfer extends CFTransfer {
    * @return the lattice point for the result of the expression
    */
   private AnnotationMirror arithmeticTransfer(
-      BinaryOperator operator, AnnotationMirror lhs, AnnotationMirror rhs) {
-    // TODO
+          BinaryOperator operator, AnnotationMirror lhs, AnnotationMirror rhs) {
+    AnnotationMirror zero = reflect(Zero.class);
+    AnnotationMirror nonZero = reflect(NonZero.class);
+    AnnotationMirror bottom = reflect(Bottom.class);
+    switch (operator) {
+      case PLUS:
+      case MINUS:
+        if (equal(lhs, zero) && equal(rhs, zero)) {
+          return zero;
+        } else if ((equal(lhs, zero) && equal(rhs, nonZero)) ||
+                (equal(lhs, nonZero) && equal(rhs, zero))) {
+          return nonZero;
+        } else if (equal(lhs, nonZero) && equal(rhs, nonZero)) {
+          // Positive & Negative Int can cancel out and create Zero
+          return top();
+        } else if (equal(lhs, top()) || equal(rhs, top())) {
+          return top();
+        }
+        break;
+      case TIMES:
+        if (equal(lhs, zero) || equal(rhs, zero)) {
+          return zero;
+        } else if (equal(lhs, nonZero) && equal(rhs, nonZero)) {
+          return nonZero;
+        } else if (equal(lhs, top()) || equal(rhs, top())) {
+          return top();
+        }
+        break;
+      case DIVIDE:
+        if (equal(rhs, zero) || equal(rhs, top()) ) {
+          return bottom;
+        } else if (equal(lhs, zero)) {
+          return zero;
+          // x % y can equal 0 even though x / y doesn't equal 0. e.g. 25 % 5 == = but 25 / 5 = 5
+        } else if (equal(rhs, nonZero)) {
+          return nonZero;
+        }
+        break;
+      case MOD:
+        if (equal(rhs, zero) || equal(rhs, top()) ) {
+          return bottom;
+        } else if (equal(lhs, zero)) {
+          return zero;
+          // x % y can equal 0 even though x / y doesn't equal 0. e.g. 25 % 5 == = but 25 / 5 = 5
+        } else if (equal(rhs, nonZero)) {
+          return top();
+        }
+        break;
+    }
     return top();
   }
 
@@ -112,11 +187,11 @@ public class DivByZeroTransfer extends CFTransfer {
   /** Get the bottom of the lattice */
   private AnnotationMirror bottom() {
     return analysis
-        .getTypeFactory()
-        .getQualifierHierarchy()
-        .getBottomAnnotations()
-        .iterator()
-        .next();
+            .getTypeFactory()
+            .getQualifierHierarchy()
+            .getBottomAnnotations()
+            .iterator()
+            .next();
   }
 
   /** Compute the least-upper-bound of two points in the lattice */
@@ -132,7 +207,7 @@ public class DivByZeroTransfer extends CFTransfer {
   /** Convert a "Class" object (e.g. "Top.class") to a point in the lattice */
   private AnnotationMirror reflect(Class<? extends Annotation> qualifier) {
     return AnnotationBuilder.fromClass(
-        analysis.getTypeFactory().getProcessingEnv().getElementUtils(), qualifier);
+            analysis.getTypeFactory().getProcessingEnv().getElementUtils(), qualifier);
   }
 
   /** Determine whether two AnnotationMirrors are the same point in the lattice */
@@ -188,12 +263,12 @@ public class DivByZeroTransfer extends CFTransfer {
   }
 
   private TransferResult<CFValue, CFStore> implementComparison(
-      Comparison op, BinaryOperationNode n, TransferResult<CFValue, CFStore> out) {
+          Comparison op, BinaryOperationNode n, TransferResult<CFValue, CFStore> out) {
     QualifierHierarchy hierarchy = analysis.getTypeFactory().getQualifierHierarchy();
     AnnotationMirror l =
-        findAnnotation(analysis.getValue(n.getLeftOperand()).getAnnotations(), hierarchy);
+            findAnnotation(analysis.getValue(n.getLeftOperand()).getAnnotations(), hierarchy);
     AnnotationMirror r =
-        findAnnotation(analysis.getValue(n.getRightOperand()).getAnnotations(), hierarchy);
+            findAnnotation(analysis.getValue(n.getRightOperand()).getAnnotations(), hierarchy);
 
     if (l == null || r == null) {
       // this can happen for generic types
@@ -204,28 +279,28 @@ public class DivByZeroTransfer extends CFTransfer {
     CFStore elseStore = out.getElseStore().copy();
 
     thenStore.insertValue(
-        JavaExpression.fromNode(n.getLeftOperand()), refineLhsOfComparison(op, l, r));
+            JavaExpression.fromNode(n.getLeftOperand()), refineLhsOfComparison(op, l, r));
 
     thenStore.insertValue(
-        JavaExpression.fromNode(n.getRightOperand()), refineLhsOfComparison(flip(op), r, l));
+            JavaExpression.fromNode(n.getRightOperand()), refineLhsOfComparison(flip(op), r, l));
 
     elseStore.insertValue(
-        JavaExpression.fromNode(n.getLeftOperand()), refineLhsOfComparison(negate(op), l, r));
+            JavaExpression.fromNode(n.getLeftOperand()), refineLhsOfComparison(negate(op), l, r));
 
     elseStore.insertValue(
-        JavaExpression.fromNode(n.getRightOperand()),
-        refineLhsOfComparison(flip(negate(op)), r, l));
+            JavaExpression.fromNode(n.getRightOperand()),
+            refineLhsOfComparison(flip(negate(op)), r, l));
 
     return new ConditionalTransferResult<>(out.getResultValue(), thenStore, elseStore);
   }
 
   private TransferResult<CFValue, CFStore> implementOperator(
-      BinaryOperator op, BinaryOperationNode n, TransferResult<CFValue, CFStore> out) {
+          BinaryOperator op, BinaryOperationNode n, TransferResult<CFValue, CFStore> out) {
     QualifierHierarchy hierarchy = analysis.getTypeFactory().getQualifierHierarchy();
     AnnotationMirror l =
-        findAnnotation(analysis.getValue(n.getLeftOperand()).getAnnotations(), hierarchy);
+            findAnnotation(analysis.getValue(n.getLeftOperand()).getAnnotations(), hierarchy);
     AnnotationMirror r =
-        findAnnotation(analysis.getValue(n.getRightOperand()).getAnnotations(), hierarchy);
+            findAnnotation(analysis.getValue(n.getRightOperand()).getAnnotations(), hierarchy);
 
     if (l == null || r == null) {
       // this can happen for generic types
@@ -234,90 +309,90 @@ public class DivByZeroTransfer extends CFTransfer {
 
     AnnotationMirror res = arithmeticTransfer(op, l, r);
     CFValue newResultValue =
-        analysis.createSingleAnnotationValue(res, out.getResultValue().getUnderlyingType());
+            analysis.createSingleAnnotationValue(res, out.getResultValue().getUnderlyingType());
     return new RegularTransferResult<>(newResultValue, out.getRegularStore());
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitEqualTo(
-      EqualToNode n, TransferInput<CFValue, CFStore> p) {
+          EqualToNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.EQ, n, super.visitEqualTo(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitNotEqual(
-      NotEqualNode n, TransferInput<CFValue, CFStore> p) {
+          NotEqualNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.NE, n, super.visitNotEqual(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitGreaterThan(
-      GreaterThanNode n, TransferInput<CFValue, CFStore> p) {
+          GreaterThanNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.GT, n, super.visitGreaterThan(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitGreaterThanOrEqual(
-      GreaterThanOrEqualNode n, TransferInput<CFValue, CFStore> p) {
+          GreaterThanOrEqualNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.GE, n, super.visitGreaterThanOrEqual(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitLessThan(
-      LessThanNode n, TransferInput<CFValue, CFStore> p) {
+          LessThanNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.LT, n, super.visitLessThan(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitLessThanOrEqual(
-      LessThanOrEqualNode n, TransferInput<CFValue, CFStore> p) {
+          LessThanOrEqualNode n, TransferInput<CFValue, CFStore> p) {
     return implementComparison(Comparison.LE, n, super.visitLessThanOrEqual(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitIntegerDivision(
-      IntegerDivisionNode n, TransferInput<CFValue, CFStore> p) {
+          IntegerDivisionNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.DIVIDE, n, super.visitIntegerDivision(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitIntegerRemainder(
-      IntegerRemainderNode n, TransferInput<CFValue, CFStore> p) {
+          IntegerRemainderNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.MOD, n, super.visitIntegerRemainder(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitFloatingDivision(
-      FloatingDivisionNode n, TransferInput<CFValue, CFStore> p) {
+          FloatingDivisionNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.DIVIDE, n, super.visitFloatingDivision(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitFloatingRemainder(
-      FloatingRemainderNode n, TransferInput<CFValue, CFStore> p) {
+          FloatingRemainderNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.MOD, n, super.visitFloatingRemainder(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitNumericalMultiplication(
-      NumericalMultiplicationNode n, TransferInput<CFValue, CFStore> p) {
+          NumericalMultiplicationNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.TIMES, n, super.visitNumericalMultiplication(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitNumericalAddition(
-      NumericalAdditionNode n, TransferInput<CFValue, CFStore> p) {
+          NumericalAdditionNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.PLUS, n, super.visitNumericalAddition(n, p));
   }
 
   @Override
   public TransferResult<CFValue, CFStore> visitNumericalSubtraction(
-      NumericalSubtractionNode n, TransferInput<CFValue, CFStore> p) {
+          NumericalSubtractionNode n, TransferInput<CFValue, CFStore> p) {
     return implementOperator(BinaryOperator.MINUS, n, super.visitNumericalSubtraction(n, p));
   }
 
   private static AnnotationMirror findAnnotation(
-      Set<AnnotationMirror> set, QualifierHierarchy hierarchy) {
+          Set<AnnotationMirror> set, QualifierHierarchy hierarchy) {
     if (set.size() == 0) {
       return null;
     }
